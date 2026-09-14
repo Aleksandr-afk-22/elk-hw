@@ -21,16 +21,20 @@
 
 **Решение 1**
 
-Приложение-генератор (dummy-app) поднят в docker
-Filebeat - Читает файлы логов всех Docker-контейнеров прямо с диска хоста (/var/lib/docker/containers/)
-Logstash - Принимает логи от Filebeat (порт 5044) и прямые JSON-сообщения по TCP (порт 5000)
+Приложение-генератор (dummy-app) поднят в docker.
+
+Filebeat - Читает файлы логов всех Docker-контейнеров прямо с диска хоста (/var/lib/docker/containers/).
+
+Logstash - Принимает логи от Filebeat (порт 5044) и прямые JSON-сообщения по TCP (порт 5000).
+
 Elasticsearch (кластер из 3 узлов):
  - es-master — управляющий узел, координирует кластер;
  - es-hot — узел для свежих логов
  - es-warm — узел для старых логов
+
 Kibana — веб-интерфейс (порт 5601)
 
-dummy-app → docker logs → Filebeat → Logstash → Elasticsearch → Kibana
+dummy-app -> docker logs -> Filebeat -> Logstash -> Elasticsearch <- Kibana
 
 ![step1_2](screenshots/step1_2.png)
 
