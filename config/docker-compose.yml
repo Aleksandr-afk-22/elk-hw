@@ -1,0 +1,138 @@
+name: elk
+
+services:
+  es-master:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: es-master
+    environment:
+      - cluster.name=elk-cluster
+      - node.name=es-master
+      - node.roles=master
+      - discovery.seed_hosts=es-master,es-hot,es-warm
+      - cluster.initial_master_nodes=es-master,es-hot,es-warm
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - es-master-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - elk-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  es-hot:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: es-hot
+    environment:
+      - cluster.name=elk-cluster
+      - node.name=es-hot
+      - node.roles=master,data_hot,data_content
+      - discovery.seed_hosts=es-master,es-hot,es-warm
+      - cluster.initial_master_nodes=es-master,es-hot,es-warm
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - es-hot-data:/usr/share/elasticsearch/data
+    networks:
+      - elk-net
+
+  es-warm:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: es-warm
+    environment:
+      - cluster.name=elk-cluster
+      - node.name=es-warm
+      - node.roles=master,data_warm,data_content
+      - discovery.seed_hosts=es-master,es-hot,es-warm
+      - cluster.initial_master_nodes=es-master,es-hot,es-warm
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - es-warm-data:/usr/share/elasticsearch/data
+    networks:
+      - elk-net
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://es-master:9200
+      - xpack.security.enabled=false
+    ports:
+      - "5601:5601"
+    networks:
+      - elk-net
+    depends_on:
+      es-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:5601/api/status >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.3
+    container_name: logstash
+    environment:
+      - LS_JAVA_OPTS=-Xms256m -Xmx256m
+    ports:
+      - "5000:5000"
+      - "5044:5044"
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+    networks:
+      - elk-net
+    depends_on:
+      es-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9600/?pretty | grep -q 'green' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.15.3
+    container_name: filebeat
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - elk-net
+    depends_on:
+      logstash:
+        condition: service_healthy
+
+  dummy:
+    build: ./dummy
+    container_name: dummy
+    networks:
+      - elk-net
+    restart: unless-stopped
+
+volumes:
+  es-master-data:
+  es-hot-data:
+  es-warm-data:
+
+networks:
+  elk-net:
+    driver: bridge
+
